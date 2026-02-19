@@ -20,89 +20,38 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
 });
 
-/* ================== BANCO EM MEMÓRIA ================== */
+/* ================= BANCO ================= */
 
 let config = {
   cargoMediador: null,
-  categoriaPartidas: null,
+  categoria: null,
   taxa: 0.30,
   banner: null
 };
 
-let mediadoresFila = [];
-let pixMediadores = {};
-let filasAtivas = {};
+let mediadores = [];
+let pix = {};
+let filas = {};
 
-/* ================== REGISTRAR COMANDOS ================== */
+/* ================= COMANDOS ================= */
 
 const commands = [
 
   new SlashCommandBuilder()
-    .setName("configurar")
-    .setDescription("Configurar sistema")
-    .addSubcommand(s =>
-      s.setName("definir_cargo_mediador")
-        .setDescription("Define cargo de mediador")
-        .addRoleOption(o =>
-          o.setName("cargo")
-            .setDescription("Cargo de mediador")
-            .setRequired(true)
-        )
-    )
-    .addSubcommand(s =>
-      s.setName("definir_categoria")
-        .setDescription("Define categoria das partidas")
-        .addChannelOption(o =>
-          o.setName("categoria")
-            .setDescription("Categoria")
-            .addChannelTypes(ChannelType.GuildCategory)
-            .setRequired(true)
-        )
-    )
-    .addSubcommand(s =>
-      s.setName("definir_banner")
-        .setDescription("Define imagem banner")
-        .addStringOption(o =>
-          o.setName("url")
-            .setDescription("URL da imagem")
-            .setRequired(true)
-        )
-    )
-    .addSubcommand(s =>
-      s.setName("definir_taxa")
-        .setDescription("Define taxa do mediador")
-        .addNumberOption(o =>
-          o.setName("valor")
-            .setDescription("Valor da taxa")
-            .setRequired(true)
-        )
-    )
+    .setName("painel")
+    .setDescription("Abrir painel de configuração")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   new SlashCommandBuilder()
-    .setName("mediadorfila")
-    .setDescription("Entrar na fila de mediadores"),
-
-  new SlashCommandBuilder()
-    .setName("setpix")
-    .setDescription("Definir seu PIX")
-    .addStringOption(o =>
-      o.setName("tipo")
-        .setDescription("cpf, gmail, telefone, chave aleatoria")
-        .setRequired(true)
-    )
-    .addStringOption(o =>
-      o.setName("chave")
-        .setDescription("Sua chave PIX")
-        .setRequired(true)
-    ),
+    .setName("mediador")
+    .setDescription("Painel de mediador"),
 
   new SlashCommandBuilder()
     .setName("criarfila")
-    .setDescription("Criar nova fila")
+    .setDescription("Criar fila")
     .addStringOption(o =>
       o.setName("modo")
-        .setDescription("1x1, 2x2, 3x3")
+        .setDescription("1x1, 2x2 ou 3x3")
         .setRequired(true)
         .addChoices(
           { name: "1x1", value: "1x1" },
@@ -116,7 +65,7 @@ const commands = [
         .setRequired(true)
     )
 
-].map(cmd => cmd.toJSON());
+].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
@@ -127,206 +76,232 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
   );
 })();
 
-/* ================== BOT READY ================== */
+/* ================= READY ================= */
 
 client.once("ready", () => {
-  console.log(`🔥 NK APOSTAS ONLINE como ${client.user.tag}`);
+  console.log(`🔥 NK APOSTAS ONLINE ${client.user.tag}`);
 });
 
-/* ================== INTERAÇÕES ================== */
+/* ================= INTERAÇÕES ================= */
 
-client.on("interactionCreate", async (interaction) => {
+client.on("interactionCreate", async interaction => {
 
-  if (interaction.isChatInputCommand()) {
+  /* ================= PAINEL ADMIN ================= */
 
-    /* ===== CONFIGURAR ===== */
+  if (interaction.isChatInputCommand() && interaction.commandName === "painel") {
 
-    if (interaction.commandName === "configurar") {
-
-      const sub = interaction.options.getSubcommand();
-
-      if (sub === "definir_cargo_mediador") {
-        config.cargoMediador = interaction.options.getRole("cargo").id;
-        return interaction.reply("✅ Cargo mediador definido!");
-      }
-
-      if (sub === "definir_categoria") {
-        config.categoriaPartidas = interaction.options.getChannel("categoria").id;
-        return interaction.reply("✅ Categoria definida!");
-      }
-
-      if (sub === "definir_banner") {
-        config.banner = interaction.options.getString("url");
-        return interaction.reply("✅ Banner definido!");
-      }
-
-      if (sub === "definir_taxa") {
-        config.taxa = interaction.options.getNumber("valor");
-        return interaction.reply("✅ Taxa definida!");
-      }
-    }
-
-    /* ===== MEDIADOR FILA ===== */
-
-    if (interaction.commandName === "mediadorfila") {
-
-      if (!config.cargoMediador)
-        return interaction.reply({ content: "⚠️ Cargo mediador não configurado.", ephemeral: true });
-
-      if (!interaction.member.roles.cache.has(config.cargoMediador))
-        return interaction.reply({ content: "❌ Você não é mediador.", ephemeral: true });
-
-      if (mediadoresFila.includes(interaction.user.id))
-        return interaction.reply({ content: "⚠️ Você já está na fila.", ephemeral: true });
-
-      mediadoresFila.push(interaction.user.id);
-
-      return interaction.reply("✅ Você entrou na fila de mediadores!");
-    }
-
-    /* ===== SET PIX ===== */
-
-    if (interaction.commandName === "setpix") {
-
-      const tipo = interaction.options.getString("tipo");
-      const chave = interaction.options.getString("chave");
-
-      pixMediadores[interaction.user.id] = { tipo, chave };
-
-      return interaction.reply({ content: "✅ PIX salvo com sucesso!", ephemeral: true });
-    }
-
-    /* ===== CRIAR FILA ===== */
-
-    if (interaction.commandName === "criarfila") {
-
-      const modo = interaction.options.getString("modo");
-      const preco = interaction.options.getNumber("preco");
-
-      const jogadoresNecessarios =
-        modo === "1x1" ? 2 :
-        modo === "2x2" ? 4 :
-        6;
-
-      const filaId = Date.now();
-
-      filasAtivas[filaId] = {
-        modo,
-        preco,
-        jogadores: [],
-        necessario: jogadoresNecessarios
-      };
-
-      const embed = new EmbedBuilder()
-        .setTitle(`🎮 Fila ${modo}`)
-        .setDescription(`💰 Preço: R$${preco}\n💵 Taxa: R$${config.taxa}\n👥 Jogadores:\nSem jogadores`)
-        .setColor("Green");
-
-      if (config.banner) embed.setImage(config.banner);
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`entrar_${filaId}`)
-          .setLabel("Entrar")
-          .setStyle(ButtonStyle.Success)
+    const embed = new EmbedBuilder()
+      .setTitle("⚙️ Painel NK Apostas")
+      .setColor("#2b2d31")
+      .setDescription(
+        `👑 Cargo Mediador: ${config.cargoMediador ? `<@&${config.cargoMediador}>` : "Não definido"}\n` +
+        `📂 Categoria: ${config.categoria ? `<#${config.categoria}>` : "Não definida"}\n` +
+        `💰 Taxa: R$ ${config.taxa}\n` +
+        `🖼 Banner: ${config.banner ? "Definido" : "Não definido"}`
       );
 
-      await interaction.reply({ embeds: [embed], components: [row] });
-    }
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("set_cargo")
+        .setLabel("Definir Cargo Mediador")
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
+        .setCustomId("set_categoria")
+        .setLabel("Definir Categoria")
+        .setStyle(ButtonStyle.Secondary),
+
+      new ButtonBuilder()
+        .setCustomId("set_taxa")
+        .setLabel("Definir Taxa")
+        .setStyle(ButtonStyle.Success),
+
+      new ButtonBuilder()
+        .setCustomId("set_banner")
+        .setLabel("Definir Banner")
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    return interaction.reply({ embeds: [embed], components: [row] });
   }
 
-  /* ===== BOTÕES ===== */
+  /* ================= PAINEL MEDIADOR ================= */
+
+  if (interaction.isChatInputCommand() && interaction.commandName === "mediador") {
+
+    const lista = mediadores.length > 0
+      ? mediadores.map(id => `<@${id}>`).join("\n")
+      : "Nenhum mediador na fila.";
+
+    const embed = new EmbedBuilder()
+      .setTitle("👨‍⚖️ Fila de Mediadores")
+      .setColor("#2b2d31")
+      .setDescription(`📋 Disponíveis:\n${lista}`);
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("entrar_mediador")
+        .setLabel("Entrar na Fila")
+        .setStyle(ButtonStyle.Success),
+
+      new ButtonBuilder()
+        .setCustomId("sair_mediador")
+        .setLabel("Sair da Fila")
+        .setStyle(ButtonStyle.Danger),
+
+      new ButtonBuilder()
+        .setCustomId("set_pix")
+        .setLabel("Configurar PIX")
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    return interaction.reply({ embeds: [embed], components: [row] });
+  }
+
+  /* ================= CRIAR FILA ================= */
+
+  if (interaction.isChatInputCommand() && interaction.commandName === "criarfila") {
+
+    const modo = interaction.options.getString("modo");
+    const preco = interaction.options.getNumber("preco");
+
+    const necessario = modo === "1x1" ? 2 : modo === "2x2" ? 4 : 6;
+    const id = Date.now();
+
+    filas[id] = { modo, preco, necessario, jogadores: [] };
+
+    const embed = new EmbedBuilder()
+      .setTitle(`${modo} | Fila`)
+      .setColor("#2b2d31")
+      .setDescription(
+        `ℹ️ Formato: ${modo} Mobile\n` +
+        `💰 Preço: R$ ${preco.toFixed(2)}\n\n` +
+        `👥 Jogadores:\nSem jogadores`
+      );
+
+    if (config.banner) embed.setThumbnail(config.banner);
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`entrar_${id}`)
+        .setLabel("Entrar")
+        .setStyle(ButtonStyle.Success),
+
+      new ButtonBuilder()
+        .setCustomId(`sair_${id}`)
+        .setLabel("Sair")
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    return interaction.reply({ embeds: [embed], components: [row] });
+  }
+
+  /* ================= BOTÕES ================= */
 
   if (interaction.isButton()) {
 
+    /* MEDIADOR ENTRAR */
+    if (interaction.customId === "entrar_mediador") {
+
+      if (!config.cargoMediador)
+        return interaction.reply({ content: "Cargo não configurado.", ephemeral: true });
+
+      if (!interaction.member.roles.cache.has(config.cargoMediador))
+        return interaction.reply({ content: "Você não é mediador.", ephemeral: true });
+
+      if (mediadores.includes(interaction.user.id))
+        return interaction.reply({ content: "Você já está na fila.", ephemeral: true });
+
+      mediadores.push(interaction.user.id);
+      return interaction.reply({ content: "Você entrou na fila!", ephemeral: true });
+    }
+
+    /* MEDIADOR SAIR */
+    if (interaction.customId === "sair_mediador") {
+      mediadores = mediadores.filter(id => id !== interaction.user.id);
+      return interaction.reply({ content: "Você saiu da fila.", ephemeral: true });
+    }
+
+    /* SET PIX */
+    if (interaction.customId === "set_pix") {
+      pix[interaction.user.id] = "Chave não definida";
+      return interaction.reply({ content: "Use /setpix no próximo update 😈", ephemeral: true });
+    }
+
+    /* FILA ENTRAR */
     if (interaction.customId.startsWith("entrar_")) {
 
-      const filaId = interaction.customId.split("_")[1];
-      const fila = filasAtivas[filaId];
-
+      const id = interaction.customId.split("_")[1];
+      const fila = filas[id];
       if (!fila) return;
 
-      if (fila.jogadores.includes(interaction.user.id))
-        return interaction.reply({ content: "Você já entrou!", ephemeral: true });
-
-      fila.jogadores.push(interaction.user.id);
+      if (!fila.jogadores.includes(interaction.user.id))
+        fila.jogadores.push(interaction.user.id);
 
       const lista = fila.jogadores.map(id => `<@${id}>`).join("\n");
 
       const embed = new EmbedBuilder()
-        .setTitle(`🎮 Fila ${fila.modo}`)
-        .setDescription(`💰 Preço: R$${fila.preco}\n💵 Taxa: R$${config.taxa}\n👥 Jogadores:\n${lista}`)
-        .setColor("Green");
+        .setTitle(`${fila.modo} | Fila`)
+        .setColor("#2b2d31")
+        .setDescription(
+          `ℹ️ Formato: ${fila.modo} Mobile\n` +
+          `💰 Preço: R$ ${fila.preco.toFixed(2)}\n\n` +
+          `👥 Jogadores:\n${lista}`
+        );
 
-      if (config.banner) embed.setImage(config.banner);
+      if (config.banner) embed.setThumbnail(config.banner);
 
       await interaction.update({ embeds: [embed] });
 
-      if (fila.jogadores.length === fila.necessario) {
+      if (fila.jogadores.length === fila.necessario && mediadores.length > 0) {
 
-        if (mediadoresFila.length === 0)
-          return interaction.followUp("⚠️ Nenhum mediador disponível.");
-
-        const mediadorId = mediadoresFila.shift();
-        const mediadorPix = pixMediadores[mediadorId];
+        const mediador = mediadores.shift();
 
         const canal = await interaction.guild.channels.create({
           name: `partida-${fila.modo}`,
           type: ChannelType.GuildText,
-          parent: config.categoriaPartidas || null,
+          parent: config.categoria || null,
           permissionOverwrites: [
-            {
-              id: interaction.guild.id,
-              deny: [PermissionFlagsBits.ViewChannel]
-            },
-            ...fila.jogadores.map(id => ({
-              id,
+            { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+            ...fila.jogadores.map(j => ({
+              id: j,
               allow: [PermissionFlagsBits.ViewChannel]
             })),
-            {
-              id: mediadorId,
-              allow: [PermissionFlagsBits.ViewChannel]
-            }
+            { id: mediador, allow: [PermissionFlagsBits.ViewChannel] }
           ]
         });
 
-        const painel = new EmbedBuilder()
-          .setTitle("📌 Partida Iniciada")
-          .setDescription(`👨‍⚖️ Mediador: <@${mediadorId}>`)
-          .setColor("Blue");
-
-        const botoes = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId("enviar_pix")
-            .setLabel("Enviar PIX")
-            .setStyle(ButtonStyle.Primary),
-          new ButtonBuilder()
-            .setCustomId("fechar_fila")
-            .setLabel("Fechar Fila")
-            .setStyle(ButtonStyle.Danger)
-        );
-
-        await canal.send({ embeds: [painel], components: [botoes] });
-
-        filasAtivas[filaId] = null;
+        await canal.send(`👨‍⚖️ Mediador: <@${mediador}>\n💰 Taxa fixa: R$ ${config.taxa}`);
       }
     }
 
-    if (interaction.customId === "enviar_pix") {
+    /* FILA SAIR */
+    if (interaction.customId.startsWith("sair_")) {
 
-      const pix = pixMediadores[interaction.user.id];
+      const id = interaction.customId.split("_")[1];
+      const fila = filas[id];
+      if (!fila) return;
 
-      if (!pix)
-        return interaction.reply({ content: "⚠️ Você não cadastrou PIX.", ephemeral: true });
+      fila.jogadores = fila.jogadores.filter(j => j !== interaction.user.id);
 
-      return interaction.reply(`💰 PIX (${pix.tipo}): ${pix.chave}`);
-    }
+      const lista = fila.jogadores.length > 0
+        ? fila.jogadores.map(id => `<@${id}>`).join("\n")
+        : "Sem jogadores";
 
-    if (interaction.customId === "fechar_fila") {
-      await interaction.channel.delete();
+      const embed = new EmbedBuilder()
+        .setTitle(`${fila.modo} | Fila`)
+        .setColor("#2b2d31")
+        .setDescription(
+          `ℹ️ Formato: ${fila.modo} Mobile\n` +
+          `💰 Preço: R$ ${fila.preco.toFixed(2)}\n\n` +
+          `👥 Jogadores:\n${lista}`
+        );
+
+      if (config.banner) embed.setThumbnail(config.banner);
+
+      await interaction.update({ embeds: [embed] });
     }
   }
-
 });
 
 client.login(TOKEN);
